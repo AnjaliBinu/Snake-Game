@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2d3748;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            color: #48bb78; /* Green for the title */
+        }
+        
+        canvas {
+            background-color: #1a202c;
+            border: 2px solid #48bb78;
+            border-radius: 0.5rem;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        #startButton, #messageBox button {
+            background-color: #48bb78; /* Green button */
+            color: white;
+            font-weight: bold;
+            padding: 0.75rem 2rem;
+            border-radius: 9999px; /* Fully rounded */
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #startButton:hover, #messageBox button:hover {
+            background-color: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        #score {
+            margin-top: 1rem;
+            font-size: 1.5rem;
+            color: #a0aec0;
+            font-weight: 500;
+        }
+        
+        #messageBox {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(45, 55, 72, 0.9);
+            padding: 2rem;
+            border-radius: 1rem;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(5px);
+            border: 2px solid #48bb78;
+        }
+
+        #messageBox h2 {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 0.5rem;
+        }
+
+        #messageBox p {
+            font-size: 1.25rem;
+            color: #cbd5e0;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <h1>Snake Game</h1>
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div id="score" class="mt-4">Score: 0</div>
+        <div class="controls">
+            <button id="startButton">Start Game</button>
+        </div>
+    </div>
+
+    <!-- Message box for game over/start screen -->
+    <div id="messageBox" class="hidden">
+        <h2 id="messageTitle">Game Over!</h2>
+        <p id="messageScore">Your final score: 0</p>
+        <button id="restartButton">Play Again</button>
+    </div>
+
+    <script>
+        // Get the canvas and its drawing context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Get other UI elements
+        const scoreDisplay = document.getElementById('score');
+        const startButton = document.getElementById('startButton');
+        const messageBox = document.getElementById('messageBox');
+        const messageTitle = document.getElementById('messageTitle');
+        const messageScore = document.getElementById('messageScore');
+        const restartButton = document.getElementById('restartButton');
+
+        // Game parameters
+        const gridSize = 10; // Size of each grid cell, matches Python code (10 pixels)
+        const tileCount = canvas.width / gridSize;
+        const gameSpeed = 1000 / 15; // Translates snake_speed from Python (15 FPS) to milliseconds
+        
+        let score = 0;
+        let snake = [];
+        let fruits = []; // Array to hold multiple fruit objects
+        let direction = 'right';
+        let isGameOver = true;
+        let gameLoopInterval;
+        let fruitSpawnInterval;
+
+        // Fruit spawning constants from Python code
+        const FRUIT_SPAWN_INTERVAL_MS = 4000;
+        const FRUIT_LIFETIME_MS = 2000;
+        const FRUIT_COLORS = {
+            blue: '#4299e1',
+            red: '#f56565',
+            white: '#cbd5e0'
+        };
+
+        // Function to start a new game
+        function startGame() {
+            // Reset game state
+            isGameOver = false;
+            score = 0;
+            scoreDisplay.textContent = 'Score: 0';
+            direction = 'right';
+            
+            // Initial snake position and length
+            snake = [{x: 10, y: 5}];
+            snake.push({x: 9, y: 5});
+            snake.push({x: 8, y: 5});
+            snake.push({x: 7, y: 5});
+            
+            fruits = []; // Clear all fruits from previous game
+            
+            // Hide the start button and message box
+            startButton.style.display = 'none';
+            messageBox.classList.add('hidden');
+            
+            // Start the game loop and fruit spawning loop
+            clearInterval(gameLoopInterval);
+            clearInterval(fruitSpawnInterval);
+            gameLoopInterval = setInterval(gameLoop, gameSpeed);
+            fruitSpawnInterval = setInterval(spawnFruits, FRUIT_SPAWN_INTERVAL_MS);
+        }
+
+        // Function to spawn multiple fruits at random positions
+        function spawnFruits() {
+            const numFruitsToSpawn = Math.floor(Math.random() * (5 - 2 + 1)) + 2;
+            const now = Date.now();
+            
+            for (let i = 0; i < numFruitsToSpawn; i++) {
+                const fruitColorKeys = Object.keys(FRUIT_COLORS);
+                const randomColor = fruitColorKeys[Math.floor(Math.random() * fruitColorKeys.length)];
+                
+                let newFruit = {
+                    x: Math.floor(Math.random() * tileCount),
+                    y: Math.floor(Math.random() * tileCount),
+                    color: FRUIT_COLORS[randomColor],
+                    type: randomColor,
+                    spawnTime: now
+                };
+
+                // Check for collision with snake or other fruits and respawn if necessary
+                let isCollision = false;
+                for(const segment of snake) {
+                    if (newFruit.x === segment.x && newFruit.y === segment.y) {
+                        isCollision = true;
+                        break;
+                    }
+                }
+                for(const fruit of fruits) {
+                    if (newFruit.x === fruit.x && newFruit.y === fruit.y) {
+                        isCollision = true;
+                        break;
+                    }
+                }
+                if (isCollision) {
+                    i--; // Decrement i to try spawning this fruit again
+                    continue;
+                }
+                
+                fruits.push(newFruit);
+            }
+        }
+
+        // Main game loop
+        function gameLoop() {
+            if (isGameOver) {
+                return;
+            }
+            
+            update();
+            draw();
+        }
+
+        // Update game state
+        function update() {
+            // Create a new head for the snake based on current direction
+            const head = { x: snake[0].x, y: snake[0].y };
+            switch (direction) {
+                case 'right': head.x++; break;
+                case 'left':  head.x--; break;
+                case 'up':    head.y--; break;
+                case 'down':  head.y++; break;
+            }
+            
+            // Add the new head to the beginning of the snake
+            snake.unshift(head);
+            
+            let ateFruit = false;
+            let fruitTypeEaten = null;
+
+            // Check for collision with any fruit
+            for (let i = 0; i < fruits.length; i++) {
+                if (head.x === fruits[i].x && head.y === fruits[i].y) {
+                    ateFruit = true;
+                    fruitTypeEaten = fruits[i].type;
+                    fruits.splice(i, 1); // Remove the eaten fruit
+                    break;
+                }
+            }
+
+            // If a blue fruit was not eaten, the snake's tail shrinks
+            if (!ateFruit || fruitTypeEaten !== 'blue') {
+                snake.pop();
+            }
+
+            // Check fruit type for game logic
+            if (fruitTypeEaten === 'blue') {
+                score += 10;
+                scoreDisplay.textContent = `Score: ${score}`;
+            } else if (fruitTypeEaten === 'red') {
+                gameOver("You ate a red fruit!");
+                return;
+            } else if (fruitTypeEaten === 'white') {
+                gameOver("You ate a white fruit!");
+                return;
+            }
+
+            // Check for game over conditions
+            // 1. Collision with walls
+            if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) {
+                gameOver("You hit the wall!");
+                return;
+            }
+            // 2. Collision with self
+            for (let i = 1; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    gameOver("You hit yourself!");
+                    return;
+                }
+            }
+            
+            // Remove old fruits that have expired
+            const now = Date.now();
+            fruits = fruits.filter(fruit => (now - fruit.spawnTime) <= FRUIT_LIFETIME_MS);
+        }
+        
+        // Draw everything on the canvas
+        function draw() {
+            // Clear the canvas
+            ctx.fillStyle = '#1a202c';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw the snake
+            for (let i = 0; i < snake.length; i++) {
+                ctx.fillStyle = (i === 0) ? '#48bb78' : '#4299e1'; // Head is green, body is blue
+                ctx.fillRect(snake[i].x * gridSize, snake[i].y * gridSize, gridSize - 2, gridSize - 2);
+            }
+            
+            // Draw all fruits
+            for (const fruit of fruits) {
+                ctx.fillStyle = fruit.color;
+                ctx.fillRect(fruit.x * gridSize, fruit.y * gridSize, gridSize, gridSize);
+            }
+        }
+        
+        // Handle keyboard input
+        document.addEventListener('keydown', e => {
+            if (isGameOver) return;
+            switch (e.key) {
+                case 'ArrowUp':
+                    if (direction !== 'down') direction = 'up';
+                    break;
+                case 'ArrowDown':
+                    if (direction !== 'up') direction = 'down';
+                    break;
+                case 'ArrowLeft':
+                    if (direction !== 'right') direction = 'left';
+                    break;
+                case 'ArrowRight':
+                    if (direction !== 'left') direction = 'right';
+                    break;
+            }
+        });
+
+        // Function to handle the game over state
+        function gameOver(message) {
+            isGameOver = true;
+            clearInterval(gameLoopInterval);
+            clearInterval(fruitSpawnInterval);
+            messageTitle.textContent = message;
+            messageScore.textContent = `Your final score: ${score}`;
+            messageBox.classList.remove('hidden');
+        }
+
+        // Event listeners for buttons
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+    </script>
+</body>
+</html>
